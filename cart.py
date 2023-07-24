@@ -96,7 +96,7 @@ class ManyCart:
         results['TIME'] = time.asctime(time.localtime())
         results['QUALITY'] = count
         json_object = json.dumps(results, indent=4)
-        url = 'http://192.168.1.200'
+        url = 'http://192.168.1.200:5003/api/Fromerp/Box'
         headers = {'Content-type': 'application/json'}   
         response = requests.post(url, data=json_object, headers=headers)
         if response.status_code == 200:
