@@ -7,6 +7,7 @@ import time
 import json
 import random
 import string
+import requests
 
 class Cart:
     def __init__(self, id, target_box, target_area, window_len=10, in_window_threshold=0.7, in_x=1, in_y=1):
@@ -82,6 +83,24 @@ class ManyCart:
         self.in_y = in_y
         self.obsolete_time = obsolete_time
         self.source = source
+
+    def post_josn(self, type, count):
+
+        results = dict()
+        results['DOOR_ID'] = type
+        results['CAM_ID'] = count
+        results['INPUT'] = "2323"
+        results['OUTPUT'] = self.source
+        results['TIME'] = time.asctime(time.localtime())
+        json_object = json.dumps(results, indent=4)
+        url = 'http://192.168.1.200'
+        headers = {'Content-type': 'application/json'}   
+        response = requests.post(url, data=json_object, headers=headers)
+        if response.status_code == 200:
+            response_data = json.loads(response.content)
+            print(response_data)
+        else:
+            print('Error:', response.status_code)
 
     def save_json(self, type, count):
         results = dict()
