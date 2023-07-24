@@ -102,18 +102,18 @@ class ManyCart:
         else:
             print('Error:', response.status_code)
 
-    def save_json(self, type, count):
-        results = dict()
-        results['type'] = type
-        results['count'] = count
-        results['time'] = time.asctime(time.localtime())
-        results['source'] = self.source
-        json_object = json.dumps(results, indent=4)
-        rand_str = ''.join(random.choices(string.ascii_uppercase +
-                             string.digits, k=6))
-        filename = results['time'].replace(" ", "_").replace(":", "_")
-        with open(f"./json_files/{filename}_{rand_str}.json", "w") as outfile:
-            outfile.write(json_object)
+    # def save_json(self, type, count):
+    #    results = dict()
+    #    results['type'] = type
+    #    results['count'] = count
+    #    results['time'] = time.asctime(time.localtime())
+    #    results['source'] = self.source
+    #    json_object = json.dumps(results, indent=4)
+    #    rand_str = ''.join(random.choices(string.ascii_uppercase +
+    #                         string.digits, k=6))
+    #    filename = results['time'].replace(" ", "_").replace(":", "_")
+    #    with open(f"./json_files/{filename}_{rand_str}.json", "w") as outfile:
+    #        outfile.write(json_object)
 
     def add_cart(self, new_box):
         new_cart = Cart(len(self.all_carts), self.target_box, self.target_area, self.window_len, self.in_window_threshold, self.in_x, self.in_y)
@@ -136,12 +136,12 @@ class ManyCart:
             self.all_carts[best_cart].add_to_history(copy.deepcopy(new_box))
             if not best_cart in self.in_counted_cart_id:
                 if self.all_carts[best_cart].is_get_in():
-                    self.save_json('out', 1)
+                    self.post_josn('out', 1)
                     self.num_in += 1
                     self.in_counted_cart_id.add(best_cart)
             if not best_cart in self.out_counted_cart_id:
                 if self.all_carts[best_cart].is_get_out():
-                    self.save_json('in', 1)
+                    self.post_josn('in', 1)
                     self.num_out += 1
                     self.out_counted_cart_id.add(best_cart)
         else:
