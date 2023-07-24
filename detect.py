@@ -67,6 +67,8 @@ def run(
         in_y,
         obsolete_time,
         detect_obsolete_interval,
+        door_id,
+        cam_id,
         weights=ROOT / 'yolov5s.pt',  # model path or triton URL
         source=ROOT / 'data/images',  # file/dir/URL/glob/screen/0(webcam)
         data=ROOT / 'data/coco128.yaml',  # dataset.yaml path
@@ -130,7 +132,7 @@ def run(
     target_area_box = torch.tensor([x_min, y_min, x_max, y_max, 0.0, num_classes]).to(device)
     target_area_tensor = target_area_box[None, ...]
     target_area = (x_max - x_min) * (y_max - y_min)
-    cart_pool = ManyCart(same_cart_threshold, target_area_box, target_area, window_len, in_window_threshold, in_x, in_y, obsolete_time, source)
+    cart_pool = ManyCart(same_cart_threshold, target_area_box, target_area, window_len, in_window_threshold, in_x, in_y, obsolete_time, source, door_id, cam_id)
     # Dataloader
     bs = 1  # batch_size
     if webcam:
@@ -302,6 +304,8 @@ def parse_opt():
     parser.add_argument('--in-y', type=int, default=1, help="if it is positive, move down will be considered as get in. If ignore vertical, set it to 0")
     parser.add_argument('--obsolete-time', type=int, default=100, help="if a cart hasn't been updated for obsolete-time (s), we delete that cart")
     parser.add_argument('--detect-obsolete-interval', type=int, default=100, help="obsolete cart detection every detect-obsolete-interval (s)")
+    parser.add_argument('--door-id', type=int, default=1, help="door id to post json")
+    parser.add_argument('--cam-id', type=str, default="192.168.1.201", help="door id to post json")
     opt = parser.parse_args()
     opt.imgsz *= 2 if len(opt.imgsz) == 1 else 1  # expand
     print_args(vars(opt))
