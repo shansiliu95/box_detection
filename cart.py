@@ -68,7 +68,7 @@ class Cart:
         return is_decreasing and correct_direction 
 
 class ManyCart:
-    def __init__(self, same_cart_threshold, target_box, target_area, window_len, in_window_threshold, in_x, in_y, obsolete_time, source):
+    def __init__(self, same_cart_threshold, target_box, target_area, window_len, in_window_threshold, in_x, in_y, obsolete_time, source, door_id, cam_id):
         self.all_carts = []
         self.same_cart_threshold = same_cart_threshold
         self.target_box = target_box
@@ -83,15 +83,18 @@ class ManyCart:
         self.in_y = in_y
         self.obsolete_time = obsolete_time
         self.source = source
+        self.door_id = door_id
+        self.cam_id = cam_id
 
     def post_josn(self, type, count):
 
         results = dict()
-        results['DOOR_ID'] = type
-        results['CAM_ID'] = count
-        results['INPUT'] = "2323"
-        results['OUTPUT'] = self.source
+        results['DOOR_ID'] = self.door_id
+        results['CAM_ID'] = self.cam_id
+        results['INPUT'] = True if type == "in" else False
+        results['OUTPUT'] = True if type == "out" else False
         results['TIME'] = time.asctime(time.localtime())
+        results['QUALITY'] = count
         json_object = json.dumps(results, indent=4)
         url = 'http://192.168.1.200'
         headers = {'Content-type': 'application/json'}   
