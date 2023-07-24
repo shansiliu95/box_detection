@@ -33,6 +33,7 @@ import os
 import platform
 import sys
 from pathlib import Path
+import time
 
 import torch
 
@@ -64,6 +65,8 @@ def run(
         in_window_threshold,
         in_x,
         in_y,
+        obsolete_time,
+        detect_obsolete_interval,
         weights=ROOT / 'yolov5s.pt',  # model path or triton URL
         source=ROOT / 'data/images',  # file/dir/URL/glob/screen/0(webcam)
         data=ROOT / 'data/coco128.yaml',  # dataset.yaml path
@@ -97,6 +100,10 @@ def run(
     assert 0 < in_target_threshold < 1
     assert 0 < same_cart_threshold < 1
     assert window_len > 0
+
+    os.makedirs("./json_files", exist_ok=True)
+
+    last_detect_obsolete_time = time.time()
     
     source = str(source)
     save_img = not nosave and not source.endswith('.txt')  # save inference images
@@ -123,7 +130,7 @@ def run(
     target_area_box = torch.tensor([x_min, y_min, x_max, y_max, 0.0, num_classes]).to(device)
     target_area_tensor = target_area_box[None, ...]
     target_area = (x_max - x_min) * (y_max - y_min)
-    cart_pool = ManyCart(same_cart_threshold, target_area_box, target_area, window_len, in_window_threshold, in_x, in_y)
+    cart_pool = ManyCart(same_cart_threshold, target_area_box, target_area, window_len, in_window_threshold, in_x, in_y, obsolete_time, source)
     # Dataloader
     bs = 1  # batch_size
     if webcam:
@@ -159,9 +166,12 @@ def run(
         # Second-stage classifier (optional)
         # pred = utils.general.apply_classifier(pred, classifier_model, im, im0s)
         # Process predictions
+        if time.time() - last_detect_obsolete_time > detect_obsolete_interval:
+            cart_pool.clean_obsolete_cart()
+            last_detect_obsolete_time = time.time()
 
         pred[0] = torch.cat([pred[0], target_area_tensor], 0) # add target area to detection result to visualize the target area
-        s += f'In: {cart_pool.num_in} Out: {cart_pool.num_out} '
+        s += f'In: {cart_pool.num_in} Out: {cart_pool.num_out} Num in Pool: {len(cart_pool.all_carts)} '
         for i, det in enumerate(pred):  # per image
             if pred[0].shape[0] > 1:
                 for j in range(pred[0].shape[0]-1):
@@ -290,6 +300,8 @@ def parse_opt():
     parser.add_argument('--in-window-threshold', type=float, default=0.7, help='ratio threshold of window history has an increasing/decreasing overlap.')
     parser.add_argument('--in-x', type=int, default=1, help="if it is negative, move to left will be considered as get in. If ignore horizontal, set it to 0")
     parser.add_argument('--in-y', type=int, default=1, help="if it is positive, move down will be considered as get in. If ignore vertical, set it to 0")
+    parser.add_argument('--obsolete-time', type=int, default=100, help="if a cart hasn't been updated for obsolete-time (s), we delete that cart")
+    parser.add_argument('--detect-obsolete-interval', type=int, default=100, help="obsolete cart detection every detect-obsolete-interval (s)")
     opt = parser.parse_args()
     opt.imgsz *= 2 if len(opt.imgsz) == 1 else 1  # expand
     print_args(vars(opt))

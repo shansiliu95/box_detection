@@ -4,6 +4,10 @@ from collections import deque
 import copy
 import numpy as np
 import time
+import json
+import random
+import string
+
 class Cart:
     def __init__(self, id, target_box, target_area, window_len=10, in_window_threshold=0.7, in_x=1, in_y=1):
         self.box_history = []
@@ -17,7 +21,7 @@ class Cart:
         self.in_window_threshold = in_window_threshold
         self.in_x = in_x
         self.in_y = in_y
-        self.last_update_time = None
+        self.last_update_time = time.time()
     
     def add_to_history(self, new_box):
         # assume box as [x_min, y_min, x_max, y_max ,probability, class]
@@ -35,6 +39,8 @@ class Cart:
             self.overlap_ratio_diff.pop(0)
             self.overlap_ratio_history.pop(0)
             self.direction_history.pop(0)
+
+        self.last_update_time = time.time()
         
 
     def get_last_box(self):
@@ -61,7 +67,7 @@ class Cart:
         return is_decreasing and correct_direction 
 
 class ManyCart:
-    def __init__(self, same_cart_threshold, target_box, target_area, window_len, in_window_threshold, in_x, in_y):
+    def __init__(self, same_cart_threshold, target_box, target_area, window_len, in_window_threshold, in_x, in_y, obsolete_time, source):
         self.all_carts = []
         self.same_cart_threshold = same_cart_threshold
         self.target_box = target_box
@@ -74,6 +80,21 @@ class ManyCart:
         self.out_counted_cart_id = set()
         self.in_x = in_x
         self.in_y = in_y
+        self.obsolete_time = obsolete_time
+        self.source = source
+
+    def save_json(self, type, count):
+        results = dict()
+        results['type'] = type
+        results['count'] = count
+        results['time'] = time.asctime(time.localtime())
+        results['source'] = self.source
+        json_object = json.dumps(results, indent=4)
+        rand_str = ''.join(random.choices(string.ascii_uppercase +
+                             string.digits, k=6))
+        filename = results['time'].replace(" ", "_").replace(":", "_")
+        with open(f"./json_files/{filename}_{rand_str}.json", "w") as outfile:
+            outfile.write(json_object)
 
     def add_cart(self, new_box):
         new_cart = Cart(len(self.all_carts), self.target_box, self.target_area, self.window_len, self.in_window_threshold, self.in_x, self.in_y)
@@ -96,14 +117,25 @@ class ManyCart:
             self.all_carts[best_cart].add_to_history(copy.deepcopy(new_box))
             if not best_cart in self.in_counted_cart_id:
                 if self.all_carts[best_cart].is_get_in():
-                        self.num_in += 1
-                        self.in_counted_cart_id.add(best_cart)
+                    self.save_json('out', 1)
+                    self.num_in += 1
+                    self.in_counted_cart_id.add(best_cart)
             if not best_cart in self.out_counted_cart_id:
                 if self.all_carts[best_cart].is_get_out():
-                        self.num_out += 1
-                        self.out_counted_cart_id.add(best_cart)
+                    self.save_json('in', 1)
+                    self.num_out += 1
+                    self.out_counted_cart_id.add(best_cart)
         else:
             self.add_cart(new_box)
+
+    def clean_obsolete_cart(self):
+        self.new_all_carts = []
+        for i, cart in enumerate(self.all_carts):
+            if time.time() - cart.last_update_time < self.obsolete_time:
+                self.new_all_carts.append(cart)
+        self.all_carts = self.new_all_carts[:]
+        
+        
 
 
 
