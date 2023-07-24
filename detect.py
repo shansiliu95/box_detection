@@ -36,6 +36,8 @@ from pathlib import Path
 import time
 
 import torch
+import requests
+import json
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
@@ -52,6 +54,23 @@ from utils.torch_utils import select_device, smart_inference_mode
 from utils.metrics import overlap_area
 from cart import Cart, ManyCart
 
+def post_josn(door_id, cam_id, type, count):
+    results = dict()
+    results['DOOR_ID'] = door_id
+    results['CAM_ID'] = cam_id
+    results['INPUT'] = True if type == "in" else False
+    results['OUTPUT'] = True if type == "out" else False
+    results['TIME'] = time.asctime(time.localtime())
+    results['QUALITY'] = count
+    json_object = json.dumps(results, indent=4)
+    url = 'http://192.168.1.200:5003/api/Fromerp/Box'
+    headers = {'Content-type': 'application/json'}   
+    response = requests.post(url, data=json_object, headers=headers)
+    if response.status_code == 200:
+        response_data = json.loads(response.content)
+        print(response_data)
+    else:
+        print('Error:', response.status_code)
 
 @smart_inference_mode()
 def run(
@@ -60,13 +79,9 @@ def run(
         y_min,
         y_max,
         in_target_threshold,
-        same_cart_threshold,
-        window_len,
-        in_window_threshold,
         in_x,
         in_y,
         obsolete_time,
-        detect_obsolete_interval,
         door_id,
         cam_id,
         weights=ROOT / 'yolov5s.pt',  # model path or triton URL
@@ -100,12 +115,8 @@ def run(
     assert 0 <= x_min < x_max <= imgsz[0]
     assert 0 <= y_min < y_max <= imgsz[1]
     assert 0 < in_target_threshold < 1
-    assert 0 < same_cart_threshold < 1
-    assert window_len > 0
 
     os.makedirs("./json_files", exist_ok=True)
-
-    last_detect_obsolete_time = time.time()
     
     source = str(source)
     save_img = not nosave and not source.endswith('.txt')  # save inference images
@@ -131,8 +142,6 @@ def run(
     names[num_classes] = "target"
     target_area_box = torch.tensor([x_min, y_min, x_max, y_max, 0.0, num_classes]).to(device)
     target_area_tensor = target_area_box[None, ...]
-    target_area = (x_max - x_min) * (y_max - y_min)
-    cart_pool = ManyCart(same_cart_threshold, target_area_box, target_area, window_len, in_window_threshold, in_x, in_y, obsolete_time, source, door_id, cam_id)
     # Dataloader
     bs = 1  # batch_size
     if webcam:
@@ -148,6 +157,12 @@ def run(
     # Run inference
     model.warmup(imgsz=(1 if pt or model.triton else bs, 3, *imgsz))  # warmup
     seen, windows, dt = 0, [], (Profile(), Profile(), Profile())
+    detected = False
+    detected_box_loc = []
+    max_detected_num = -1
+    num_in = 0
+    num_out = 0
+    last_detected_time = None
     for path, im, im0s, vid_cap, s in dataset:
         with dt[0]:
             im = torch.from_numpy(im).to(model.device)
@@ -168,19 +183,43 @@ def run(
         # Second-stage classifier (optional)
         # pred = utils.general.apply_classifier(pred, classifier_model, im, im0s)
         # Process predictions
-        if time.time() - last_detect_obsolete_time > detect_obsolete_interval:
-            cart_pool.clean_obsolete_cart()
-            last_detect_obsolete_time = time.time()
 
         pred[0] = torch.cat([pred[0], target_area_tensor], 0) # add target area to detection result to visualize the target area
-        s += f'In: {cart_pool.num_in} Out: {cart_pool.num_out} Num in Pool: {len(cart_pool.all_carts)} '
+        s += f'In: {num_in} Out: {num_out} '
         for i, det in enumerate(pred):  # per image
             if pred[0].shape[0] > 1:
+                cur_box_loc = []
+                cur_num_detected = 0
                 for j in range(pred[0].shape[0]-1):
-                    overlap_ratio = overlap_area(pred[0][j], pred[0][-1]) / target_area
+                    box_area = (pred[0][j][2].item() - pred[0][j][0].item()) * (pred[0][j][3].item() - pred[0][j][1].item())
+                    overlap_ratio = overlap_area(pred[0][j], pred[0][-1]) / box_area
                     if overlap_ratio > in_target_threshold:
-                        cart_pool.update_cart(pred[0][j])
-                    #print(len(cart_pool.all_carts))
+                        detected = True
+                        cur_num_detected += 1
+                        last_detected_time = time.time()
+                        cur_box_loc.append(pred[0][j][:4][None, ...])
+                if detected and cur_box_loc:
+                    max_detected_num = max(max_detected_num, cur_num_detected)
+                    cur_box_loc = torch.cat(cur_box_loc, 0).mean(0)
+                    detected_box_loc.append(cur_box_loc[None, ...])
+                
+            if last_detected_time and (time.time() - last_detected_time) > obsolete_time and len(detected_box_loc) > 1:
+                detected_box_loc = torch.cat(detected_box_loc, 0)
+                avg_direction = (detected_box_loc[1:, :] - detected_box_loc[:-1, :]).mean(0)
+                detected = False
+                detected_box_loc = []
+                last_detected_time = None
+                if avg_direction[0].item() * in_x >= 0 and avg_direction[1].item() * in_y >= 0:
+                    num_in += max_detected_num
+                    max_detected_num = -1
+                    post_josn(door_id, cam_id, "in", max_detected_num)
+                elif avg_direction[0].item() * in_x <= 0 and avg_direction[1].item() * in_y <= 0:
+                    num_out += max_detected_num
+                    max_detected_num = -1
+                    post_josn(door_id, cam_id, "out", max_detected_num)
+
+
+
                     
             seen += 1
             
@@ -296,14 +335,10 @@ def parse_opt():
     parser.add_argument('--x-max', type=int, default=0, help='x_max value of the target area.')
     parser.add_argument('--y-min', type=int, default=0, help='y_min value of the target area.')
     parser.add_argument('--y-max', type=int, default=0, help='y_max value of the target area.')
-    parser.add_argument('--in-target-threshold', type=float, default=0.3, help='threshold of the ratio of the target area occupied by a cart.')
-    parser.add_argument('--same-cart-threshold', type=float, default=0.7, help='overlapping threshold of two subsequent boxes.')
-    parser.add_argument('--window-len', type=int, default=10, help='window history length to track cart.')
-    parser.add_argument('--in-window-threshold', type=float, default=0.7, help='ratio threshold of window history has an increasing/decreasing overlap.')
+    parser.add_argument('--in-target-threshold', type=float, default=0.6, help='threshold of the ratio of the box area occupied by the target.')
     parser.add_argument('--in-x', type=int, default=1, help="if it is negative, move to left will be considered as get in. If ignore horizontal, set it to 0")
-    parser.add_argument('--in-y', type=int, default=1, help="if it is positive, move down will be considered as get in. If ignore vertical, set it to 0")
+    parser.add_argument('--in-y', type=int, default=-1, help="if it is positive, move down will be considered as get in. If ignore vertical, set it to 0")
     parser.add_argument('--obsolete-time', type=int, default=100, help="if a cart hasn't been updated for obsolete-time (s), we delete that cart")
-    parser.add_argument('--detect-obsolete-interval', type=int, default=100, help="obsolete cart detection every detect-obsolete-interval (s)")
     parser.add_argument('--door-id', type=int, default=1, help="door id to post json")
     parser.add_argument('--cam-id', type=str, default="192.168.1.201", help="door id to post json")
     opt = parser.parse_args()
