@@ -211,12 +211,13 @@ def run(
                 last_detected_time = None
                 if avg_direction[0].item() * in_x >= 0 and avg_direction[1].item() * in_y >= 0:
                     num_in += max_detected_num
-                    max_detected_num = -1
                     post_josn(door_id, cam_id, "in", max_detected_num)
+                    max_detected_num = -1
                 elif avg_direction[0].item() * in_x <= 0 and avg_direction[1].item() * in_y <= 0:
                     num_out += max_detected_num
-                    max_detected_num = -1
                     post_josn(door_id, cam_id, "out", max_detected_num)
+                    max_detected_num = -1
+                    
 
 
 
