@@ -202,6 +202,8 @@ def run(
                     max_detected_num = max(max_detected_num, cur_num_detected)
                     cur_box_loc = torch.cat(cur_box_loc, 0).mean(0)
                     detected_box_loc.append(cur_box_loc[None, ...])
+                    if len(detected_box_loc) > 500:
+                        detected_box_loc.pop()
                 
             if last_detected_time and (time.time() - last_detected_time) > obsolete_time and len(detected_box_loc) > 1:
                 detected_box_loc = torch.cat(detected_box_loc, 0)
